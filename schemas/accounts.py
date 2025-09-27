@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, condecimal
 from datetime import date
 from models.accounts import AccountType

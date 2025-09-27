@@ -1,155 +1,158 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 
 from database import get_db
-from models.accounts import Account, Pot
-from models.transactions import Transaction, TransactionLeg
-from schemas.transactions import ExternalPaymentIn, PotTransferIn, TransferIn
+from modules.transactions.service import TransactionService
+from modules.accounts.service import AccountService
+from schemas.transactions import ExternalPaymentIn, PotTransferIn, TransferIn, TransactionResponse
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
-
-# --- Helpers ---
-
-def verify_account(db: Session, account_id: int):
-    account = db.query(Account).filter(Account.id == account_id).first()
-    if not account:
-        raise HTTPException(status_code=403, detail="Account not found")
-    return account
-
-def verify_pot(db: Session, pot_id: int):
-    pot = db.query(Pot).filter(Pot.id == pot_id).first()
-    if not pot:
-        raise HTTPException(status_code=403, detail="Pot not found")
-    return pot
-
-def verify_external_account(db: Session, external_account_id: int):
-    external = db.query(Account).filter(Account.id == external_account_id, Account.is_external==True).first()
-    if not external:
-        raise HTTPException(status_code=404, detail="External account not found")
-    return external
-
-
-# --- Endpoints ---
 
 
 @router.post("/transfer", status_code=201)
 def transfer_funds(data: TransferIn, db: Session = Depends(get_db)):
-    # Verify ownership
-    from_acc = verify_account(db, data.from_account_id)
-    to_acc = verify_account(db, data.to_account_id)
-    if from_acc.id == to_acc.id:
-        raise HTTPException(400, "From and To accounts cannot be the same")
+    service = TransactionService(db)
+    account_service = AccountService(db)
+    
+    try:
+        # Verify accounts exist
+        from_acc = account_service.get(data.from_account_id)
+        to_acc = account_service.get(data.to_account_id)
+        if not from_acc or not to_acc:
+            raise HTTPException(status_code=404, detail="Account not found")
+        if from_acc.id == to_acc.id:
+            raise HTTPException(status_code=400, detail="From and To accounts cannot be the same")
 
-    # Create Transaction with 2 legs
-    txn = Transaction(description=data.description, date=data.date)
-    db.add(txn)
-    db.flush()
-
-    leg_out = TransactionLeg(
-        transaction_id=txn.id,
-        account_id=from_acc.id,
-        debit=data.amount,
-        credit=None
-    )
-    leg_in = TransactionLeg(
-        transaction_id=txn.id,
-        account_id=to_acc.id,
-        debit=None,
-        credit=data.amount
-    )
-
-    db.add_all([leg_out, leg_in])
-
-    from_acc.balance -= data.amount
-    to_acc.balance += data.amount
-    db.add(from_acc)
-    db.add(to_acc)
-
-    db.commit()
-    return {"message": "Transfer completed"}
-
+        # Create transaction
+        transaction = service.create_transaction(
+            amount=Decimal(str(data.amount)),
+            description=data.description,
+            from_account_id=data.from_account_id,
+            to_account_id=data.to_account_id,
+            date=data.date or datetime.utcnow()
+        )
+        
+        # Update account balances
+        account_service.transfer(
+            from_id=data.from_account_id,
+            to_id=data.to_account_id,
+            amount=Decimal(str(data.amount)),
+            description=data.description
+        )
+        
+        return {"message": "Transfer completed", "transaction_id": transaction.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/pot-transfer", status_code=201)
 def pot_transfer(data: PotTransferIn, db: Session = Depends(get_db)):
-    # Verify ownership
-    account = verify_account(db, data.account_id)
-    pot = verify_pot(db, data.pot_id)
+    service = TransactionService(db)
+    account_service = AccountService(db)
+    
+    try:
+        # Verify account and pot
+        account = account_service.get(data.account_id)
+        pot = account_service.get_pot(data.pot_id)
+        
+        if not account or not pot:
+            raise HTTPException(status_code=404, detail="Account or pot not found")
+        if pot.account_id != account.id:
+            raise HTTPException(status_code=400, detail="Pot does not belong to specified account")
 
-    if pot.account_id != account.id:
-        raise HTTPException(400, "Pot does not belong to specified account")
+        amount = Decimal(str(data.amount))
+        if data.direction == "to_pot":
+            from_id = data.account_id
+            to_id = data.pot_id
+        else:
+            from_id = data.pot_id
+            to_id = data.account_id
 
-    txn = Transaction(note=f"Pot transfer {data.direction}")
-    db.add(txn)
-    db.flush()
-
-    if data.direction == "to_pot":
-        leg_account = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=account.id,
-            amount=-data.amount
+        transaction = service.create_transaction(
+            amount=amount,
+            description=f"Pot transfer {data.direction}",
+            from_account_id=from_id,
+            to_account_id=to_id,
+            date=datetime.utcnow()
         )
-        leg_pot = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=pot.id,
-            amount=data.amount
+        
+        account_service.transfer(
+            from_id=from_id,
+            to_id=to_id,
+            amount=amount,
+            description=f"Pot transfer {data.direction}"
         )
-    else:  # from_pot
-        leg_account = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=account.id,
-            amount=data.amount
-        )
-        leg_pot = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=pot.id,
-            amount=-data.amount
-        )
-
-    db.add_all([leg_account, leg_pot])
-    db.commit()
-    return {"message": "Pot transfer completed"}
-
+        
+        return {"message": "Pot transfer completed", "transaction_id": transaction.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/external", status_code=201)
 def external_payment(data: ExternalPaymentIn, db: Session = Depends(get_db)):
-    internal_acc = verify_account(db, data.internal_account_id)
-    external_acc = verify_external_account(db, data.external_account_id)
+    service = TransactionService(db)
+    account_service = AccountService(db)
+    
+    try:
+        # Verify accounts
+        internal_acc = account_service.get(data.internal_account_id)
+        external_acc = account_service.get(data.external_account_id)
+        
+        if not internal_acc:
+            raise HTTPException(status_code=404, detail="Internal account not found")
+        if not external_acc or not external_acc.is_external:
+            raise HTTPException(status_code=404, detail="External account not found")
 
-    txn = Transaction(note=data.note)
-    db.add(txn)
-    db.flush()
+        amount = Decimal(str(data.amount))
+        if data.direction == "out":
+            from_id = data.internal_account_id
+            to_id = data.external_account_id
+        else:
+            from_id = data.external_account_id
+            to_id = data.internal_account_id
 
-    if data.direction == "out":
-        # money moves from internal account to external account
-        leg_internal = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=internal_acc.id,
-            debit=data.amount,
-            credit=None
+        transaction = service.create_transaction(
+            amount=amount,
+            description=data.note,
+            from_account_id=from_id,
+            to_account_id=to_id,
+            date=datetime.utcnow()
         )
-        leg_external = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=external_acc.id,
-            debit=None,
-            credit=data.amount
+        
+        account_service.transfer(
+            from_id=from_id,
+            to_id=to_id,
+            amount=amount,
+            description=data.note
         )
-    else:
-        # money moves from external to internal
-        leg_internal = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=internal_acc.id,
-            credit=data.amount,
-            debit=None
-        )
-        leg_external = TransactionLeg(
-            transaction_id=txn.id,
-            account_id=external_acc.id,
-            credit=None,
-            debit=data.amount
-        )
+        
+        return {"message": "External payment completed", "transaction_id": transaction.id}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    db.add_all([leg_internal, leg_external])
-    db.commit()
-    return {"message": "External payment recorded"}
+@router.get("/{transaction_id}", response_model=TransactionResponse)
+def get_transaction(transaction_id: int, db: Session = Depends(get_db)):
+    service = TransactionService(db)
+    transaction = service.get(transaction_id)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    return transaction
+
+@router.get("/account/{account_id}")
+def get_account_transactions(
+    account_id: int,
+    start_date: datetime = None,
+    end_date: datetime = None,
+    db: Session = Depends(get_db)
+):
+    service = TransactionService(db)
+    try:
+        transactions = service.get_account_transactions(
+            account_id=account_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+        return transactions
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
