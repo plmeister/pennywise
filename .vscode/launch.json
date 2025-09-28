@@ -1,0 +1,17 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+    
+        {
+            "name": "transfer_to_pot",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "pw",
+            "console": "integratedTerminal",
+            "args": "pot-transfer --account 1 --pot 1 --amount 100 --direction to_pot --desc \"Transfer to pot\""
+        }
+    ]
+}

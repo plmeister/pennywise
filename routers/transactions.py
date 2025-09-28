@@ -25,21 +25,11 @@ def transfer_funds(data: TransferIn, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Account not found")
         if from_acc.id == to_acc.id:
             raise HTTPException(status_code=400, detail="From and To accounts cannot be the same")
-
-        # Create transaction
-        transaction = service.create_transaction(
-            amount=Decimal(str(data.amount)),
-            description=data.description,
+        
+        transaction = service.create_transfer(
             from_account_id=data.from_account_id,
             to_account_id=data.to_account_id,
-            date=data.date or datetime.utcnow()
-        )
-        
-        # Update account balances
-        account_service.transfer(
-            from_id=data.from_account_id,
-            to_id=data.to_account_id,
-            amount=Decimal(str(data.amount)),
+            amount=data.amount,
             description=data.description
         )
         
@@ -62,27 +52,13 @@ def pot_transfer(data: PotTransferIn, db: Session = Depends(get_db)):
         if pot.account_id != account.id:
             raise HTTPException(status_code=400, detail="Pot does not belong to specified account")
 
-        amount = Decimal(str(data.amount))
-        if data.direction == "to_pot":
-            from_id = data.account_id
-            to_id = data.pot_id
-        else:
-            from_id = data.pot_id
-            to_id = data.account_id
+        amount = data.amount
 
-        transaction = service.create_transaction(
+        transaction = service.create_pot_transfer(
+            pot_id=data.pot_id,
+            account_id=data.account_id,
             amount=amount,
-            description=f"Pot transfer {data.direction}",
-            from_account_id=from_id,
-            to_account_id=to_id,
-            date=datetime.utcnow()
-        )
-        
-        account_service.transfer(
-            from_id=from_id,
-            to_id=to_id,
-            amount=amount,
-            description=f"Pot transfer {data.direction}"
+            direction=data.direction
         )
         
         return {"message": "Pot transfer completed", "transaction_id": transaction.id}
@@ -104,7 +80,7 @@ def external_payment(data: ExternalPaymentIn, db: Session = Depends(get_db)):
         if not external_acc or not external_acc.is_external:
             raise HTTPException(status_code=404, detail="External account not found")
 
-        amount = Decimal(str(data.amount))
+        amount = data.amount
         if data.direction == "out":
             from_id = data.internal_account_id
             to_id = data.external_account_id

@@ -14,3 +14,14 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def init_db():
+    # Import all models so they are registered with SQLAlchemy
+    import models.accounts
+    import models.categories
+    import models.transactions
+    import models.scheduled_transactions
+    import models.scenarios
+    import models.users
+    
+    Base.metadata.create_all(bind=engine)

@@ -23,7 +23,7 @@ class ScenarioService(BaseService[Scenario]):
 
         transaction = ScenarioTransaction(
             scenario_id=scenario_id,
-            amount=float(amount),
+            amount=amount,
             description=description,
             date=date
         )
@@ -50,7 +50,7 @@ class ScenarioService(BaseService[Scenario]):
             forecast.append({
                 'date': transaction.date,
                 'amount': transaction.amount,
-                'balance': float(balance),
+                'balance': balance,
                 'description': transaction.description
             })
         

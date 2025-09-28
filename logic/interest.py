@@ -1,4 +1,5 @@
 from models.accounts import Account, AccountType
+from decimal import Decimal
 
 
 def accrue_interest(account: Account, days: int):
@@ -13,7 +14,7 @@ def accrue_interest(account: Account, days: int):
     else:
         return 0
 
-    interest = account.balance * ((1 + daily_rate) ** days - 1)
+    interest = Decimal(str(account.balance)) * ((Decimal(1) + Decimal(str(daily_rate))) ** days - Decimal(1))
     return interest
 
 def accrue_overdraft_interest(account: Account, days: int):
@@ -24,6 +25,6 @@ def accrue_overdraft_interest(account: Account, days: int):
         return 0
 
     daily_rate = float(account.overdraft_interest_rate) / 365
-    overdraft_amount = abs(min(account.balance, account.overdraft_limit or 0))
-    interest = overdraft_amount * ((1 + daily_rate) ** days - 1)
+    overdraft_amount = abs(min(Decimal(str(account.balance)), Decimal(str(account.overdraft_limit or 0))))
+    interest = overdraft_amount * ((Decimal(1) + Decimal(str(daily_rate))) ** days - Decimal(1))
     return interest

@@ -1,10 +1,11 @@
 from pydantic import BaseModel
 from datetime import date
 from typing import Optional, Literal
+from decimal import Decimal
 
 class ScheduledTransactionBase(BaseModel):
     description: str
-    amount: float
+    amount: Decimal
     from_account_id: Optional[int]
     to_account_id: Optional[int]
     from_pot_id: Optional[int]

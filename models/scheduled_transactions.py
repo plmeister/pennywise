@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Boolean, Enum
+from sqlalchemy import Column, Integer, String, Date, ForeignKey, Boolean, Enum, Numeric
 from sqlalchemy.orm import relationship
 from database import Base
 import enum
+from decimal import Decimal
 
 class RecurrenceType(enum.Enum):
     ONCE = "once"
@@ -15,7 +16,7 @@ class ScheduledTransaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     description = Column(String)
-    amount = Column(Float)
+    amount = Column(Numeric(12, 2))
     from_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     to_account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     from_pot_id = Column(Integer, ForeignKey("pots.id"), nullable=True)

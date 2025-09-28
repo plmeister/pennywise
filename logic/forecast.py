@@ -3,6 +3,7 @@ from typing import List
 from dateutil.rrule import rrule, DAILY, WEEKLY, MONTHLY, YEARLY
 from models.scheduled_transactions import RecurrenceType, ScheduledTransaction
 from schemas.forecast_transactions import ForecastTransaction
+from decimal import Decimal
 
 
 FREQUENCY_MAP = {
@@ -31,7 +32,7 @@ def expand_scheduled_transactions(
             forecast.append(ForecastTransaction(
                 date=dt.date(),
                 name=item.description,
-                amount=item.amount,
+                amount=Decimal(str(item.amount)),
                 source_account_id=item.from_account_id,
                 destination_account_id=item.to_account_id,
             ))

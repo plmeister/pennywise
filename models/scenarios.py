@@ -1,7 +1,8 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Date, DateTime, Boolean, Float
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Date, DateTime, Boolean, Numeric
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from database import Base
+from decimal import Decimal
 
 class ForecastScenario(Base):
     __tablename__ = "forecast_scenarios"
@@ -36,7 +37,7 @@ class ScenarioTransactionLeg(Base):
     id = Column(Integer, primary_key=True)
     transaction_id = Column(Integer, ForeignKey("scenario_transactions.id"), nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
-    amount = Column(Float, nullable=False)  # Positive for inflow, negative for outflow
+    amount = Column(Numeric(12, 2), nullable=False)  # Positive for inflow, negative for outflow
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
 
     transaction = relationship("ScenarioTransaction", back_populates="legs")

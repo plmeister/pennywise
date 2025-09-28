@@ -1,7 +1,8 @@
 import enum
-from sqlalchemy import Column, Integer, Numeric, String, Float, Date, ForeignKey, Boolean, Enum as SqlEnum
+from sqlalchemy import Column, Integer, Numeric, String, Date, ForeignKey, Boolean, Enum as SqlEnum
 from sqlalchemy.orm import relationship
 from database import Base
+from decimal import Decimal
 
 class AccountType(str, enum.Enum):
     current = "current"
@@ -10,12 +11,38 @@ class AccountType(str, enum.Enum):
     loan = "loan"
     mortgage = "mortgage"
 
+class Currency(str, enum.Enum):
+    GBP = "GBP"
+    USD = "USD"
+    EUR = "EUR"
+    JPY = "JPY"
+    AUD = "AUD"
+    CAD = "CAD"
+    CHF = "CHF"
+    CNY = "CNY"
+    
+    @property
+    def symbol(self) -> str:
+        """Get the currency symbol for display"""
+        symbols = {
+            "GBP": "£",
+            "USD": "$",
+            "EUR": "€",
+            "JPY": "¥",
+            "AUD": "A$",
+            "CAD": "C$",
+            "CHF": "Fr",
+            "CNY": "¥"
+        }
+        return symbols.get(self.value, self.value)
+
 class Account(Base):
     __tablename__ = "accounts"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
     type = Column(SqlEnum(AccountType), nullable=False, default=AccountType.current)
-    balance = Column(Numeric(12, 2), nullable=False, default=0.0)
+    currency = Column(SqlEnum(Currency), nullable=False, default=Currency.GBP)
+    balance = Column(Numeric(12, 2), nullable=False, default=Decimal('0.00'))
     is_external = Column(Boolean, default=False)  # True for external accounts
     # Interest-related fields
     interest_rate = Column(Numeric(5, 4))  # e.g. 0.0750 for 7.5%
@@ -34,8 +61,8 @@ class Pot(Base):
     __tablename__ = "pots"
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String)
-    target_amount = Column(Float, default=0.0)
-    current_amount = Column(Float, default=0.0)
+    target_amount = Column(Numeric(12, 2), default=Decimal('0.00'))
+    current_amount = Column(Numeric(12, 2), default=Decimal('0.00'))
     is_active = Column(Boolean, default=True)
     account_id = Column(Integer, ForeignKey("accounts.id"))
     account = relationship("Account", back_populates="pots")

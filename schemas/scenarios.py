@@ -1,10 +1,11 @@
 from pydantic import BaseModel, Field
 from datetime import date
 from typing import List, Optional
+from decimal import Decimal
 
 class ScenarioTransactionLegCreate(BaseModel):
     account_id: int
-    amount: float
+    amount: Decimal
     category_id: Optional[int] = None
 
 class ScenarioTransactionCreate(BaseModel):
@@ -24,7 +25,7 @@ class ForecastScenarioCreate(BaseModel):
 class ScenarioTransactionLeg(BaseModel):
     id: int
     account_id: int
-    amount: float
+    amount: Decimal
     category_id: Optional[int]
 
     class Config:

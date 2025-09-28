@@ -44,7 +44,7 @@ def get_accounts(db: Session = Depends(get_db)):
 def transfer_money(
     from_id: int,
     to_id: int,
-    amount: float,
+    amount: Decimal,
     description: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
@@ -53,7 +53,7 @@ def transfer_money(
         service.transfer(
             from_id=from_id,
             to_id=to_id,
-            amount=Decimal(str(amount)),
+            amount=amount,
             description=description
         )
         return {"message": "Transfer successful"}
