@@ -1,12 +1,17 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Integer, String, ForeignKey
+from sqlalchemy.orm import relationship, mapped_column, Mapped
 from database import Base
 
+
 class Category(Base):
-    __tablename__ = "categories"
+    __tablename__: str = "categories"
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String, nullable=False)
-    parent_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    parent_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("categories.id"), nullable=True
+    )
 
-    parent = relationship("Category", remote_side=[id], backref="children")
+    parent: Mapped["Category"] = relationship(
+        "Category", remote_side=[id], backref="children"
+    )
