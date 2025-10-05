@@ -1,8 +1,16 @@
 import enum
-from sqlalchemy import Column, Integer, Numeric, String, Date, ForeignKey, Boolean, Enum as SqlEnum
-from sqlalchemy.orm import relationship
+from sqlalchemy import (
+    Integer,
+    Numeric,
+    String,
+    ForeignKey,
+    Boolean,
+    Enum as SqlEnum,
+)
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from database import Base
 from decimal import Decimal
+
 
 class AccountType(str, enum.Enum):
     current = "current"
@@ -10,6 +18,7 @@ class AccountType(str, enum.Enum):
     credit_card = "credit_card"
     loan = "loan"
     mortgage = "mortgage"
+
 
 class Currency(str, enum.Enum):
     GBP = "GBP"
@@ -20,7 +29,7 @@ class Currency(str, enum.Enum):
     CAD = "CAD"
     CHF = "CHF"
     CNY = "CNY"
-    
+
     @property
     def symbol(self) -> str:
         """Get the currency symbol for display"""
@@ -32,37 +41,57 @@ class Currency(str, enum.Enum):
             "AUD": "A$",
             "CAD": "C$",
             "CHF": "Fr",
-            "CNY": "¥"
+            "CNY": "¥",
         }
         return symbols.get(self.value, self.value)
 
-class Account(Base):
-    __tablename__ = "accounts"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    type = Column(SqlEnum(AccountType), nullable=False, default=AccountType.current)
-    currency = Column(SqlEnum(Currency), nullable=False, default=Currency.GBP)
-    balance = Column(Numeric(12, 2), nullable=False, default=Decimal('0.00'))
-    is_external = Column(Boolean, default=False)  # True for external accounts
-    # Interest-related fields
-    interest_rate = Column(Numeric(5, 4))  # e.g. 0.0750 for 7.5%
-    interest_compounding = Column(String)  # e.g. 'daily', 'monthly'
 
-    pots = relationship("Pot", back_populates="account")
+class Account(Base):
+    __tablename__: str = "accounts"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    type: Mapped[AccountType] = mapped_column(
+        SqlEnum(AccountType), nullable=False, default=AccountType.current
+    )
+    currency: Mapped[Currency] = mapped_column(
+        SqlEnum(Currency), nullable=False, default=Currency.GBP
+    )
+    balance: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00")
+    )
+    is_external: Mapped[bool] = mapped_column(
+        Boolean, default=False
+    )  # True for external accounts
+    # Interest-related fields
+    interest_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 4)
+    )  # e.g. 0.0750 for 7.5%
+    interest_compounding: Mapped[str] = mapped_column(String)  # e.g. 'daily', 'monthly'
+
+    pots: Mapped[list["Pot"]] = relationship("Pot", back_populates="account")
 
     # For debts
-    minimum_payment = Column(Numeric(12, 2))
-    
+    minimum_payment: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+
     # Overdraft config (for current accounts)
-    overdraft_limit = Column(Numeric(12, 2))  # How far below 0 allowed
-    overdraft_interest_rate = Column(Numeric(5, 4))  # e.g. 0.19 for 19% APR
+    overdraft_limit: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2)
+    )  # How far below 0 allowed
+    overdraft_interest_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 4)
+    )  # e.g. 0.19 for 19% APR
+
 
 class Pot(Base):
-    __tablename__ = "pots"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    target_amount = Column(Numeric(12, 2), default=Decimal('0.00'))
-    current_amount = Column(Numeric(12, 2), default=Decimal('0.00'))
-    is_active = Column(Boolean, default=True)
-    account_id = Column(Integer, ForeignKey("accounts.id"))
-    account = relationship("Account", back_populates="pots")
+    __tablename__: str = "pots"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String)
+    target_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00")
+    )
+    current_amount: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), default=Decimal("0.00")
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"))
+    account: Mapped["Account"] = relationship("Account", back_populates="pots")

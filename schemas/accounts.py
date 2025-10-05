@@ -1,23 +1,26 @@
-from typing import Optional
-from pydantic import BaseModel, Decimal
-from datetime import date
+from pydantic import BaseModel
+from decimal import Decimal
 from models.accounts import AccountType
+
 
 class AccountBase(BaseModel):
     name: str
     type: AccountType
     balance: Decimal
     is_external: bool = False
-    interest_rate: Optional[Decimal] = None
-    interest_compounding: Optional[str] = None
-    minimum_payment: Optional[Decimal] = None
+    interest_rate: Decimal | None = None
+    interest_compounding: str | None = None
+    minimum_payment: Decimal | None = None
     # Overdraft
-    overdraft_limit: Optional[Decimal] = None
-    overdraft_interest_rate: Optional[Decimal] = None
+    overdraft_limit: Decimal | None = None
+    overdraft_interest_rate: Decimal | None = None
+
 
 class AccountCreate(BaseModel):
     name: str
     balance: Decimal
+    account_type: AccountType
+
 
 class PotOut(BaseModel):
     id: int
@@ -27,16 +30,19 @@ class PotOut(BaseModel):
     is_active: bool
     account_id: int
 
+
 class PotCreate(BaseModel):
     name: str
-    target_amount: Decimal = 0.0
-    current_amount: Decimal = 0.0
+    target_amount: Decimal
+    initial_amount: Decimal
     is_active: bool = True
     account_id: int
 
+
 class AccountOut(AccountCreate):
     id: int
-    balance: Decimal = 0.0
+    balance: Decimal
     pots: list[PotOut]
+
     class Config:
-        from_attributes = True
+        from_attributes: bool = True

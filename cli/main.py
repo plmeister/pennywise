@@ -1,7 +1,7 @@
 import typer
 import httpx
 import json
-from prompt_toolkit import prompt, PromptSession
+from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.history import InMemoryHistory
 from rich import print
@@ -9,10 +9,12 @@ from rich import print
 app = typer.Typer()
 session = PromptSession(history=InMemoryHistory())
 
+
 def load_schema(client):
     res = client.get("/openapi.json")
     res.raise_for_status()
     return res.json()
+
 
 def build_completer(schema):
     ops = []
@@ -21,8 +23,13 @@ def build_completer(schema):
             ops.append(f"{m.upper()} {path}")
     return WordCompleter(ops, ignore_case=True)
 
+
 @app.command()
-def interactive(url: str = typer.Option("http://localhost:8000", help="Base URL of your FastAPI server")):
+def interactive(
+    url: str = typer.Option(
+        "http://localhost:8000", help="Base URL of your FastAPI server"
+    ),
+):
     """
     Start interactive CLI session connected to FastAPI backend.
     """
@@ -43,7 +50,9 @@ def interactive(url: str = typer.Option("http://localhost:8000", help="Base URL 
             if verb in ("exit", "quit"):
                 break
             if verb == "help":
-                print("[green]Available commands:[/green] GET, POST, PUT, PATCH, DELETE + path + optional JSON body")
+                print(
+                    "[green]Available commands:[/green] GET, POST, PUT, PATCH, DELETE + path + optional JSON body"
+                )
                 continue
 
             method, path = cmd[0], cmd[1]
@@ -71,6 +80,7 @@ def interactive(url: str = typer.Option("http://localhost:8000", help="Base URL 
             print(f"[red]Error:[/red] {e}")
 
     client.close()
+
 
 if __name__ == "__main__":
     app()

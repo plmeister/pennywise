@@ -1,28 +1,36 @@
 from sqlalchemy.orm import Session
-from typing import Generic, TypeVar, Type, List
-from sqlalchemy.orm import Query
+from typing import Generic, TypeVar
+
+from database import Base
+
 
 ModelType = TypeVar("ModelType")
 
+CreateSchemaType = TypeVar("CreateSchemaType", bound=Base)
+
+
 class BaseService(Generic[ModelType]):
-    def __init__(self, model: Type[ModelType], db: Session):
+    model: type[ModelType]
+    db: Session
+
+    def __init__(self, model: type[ModelType], db: Session):
         self.model = model
         self.db = db
 
-    def get(self, id: int) -> ModelType:
+    def get(self, id: int) -> ModelType | None:
         return self.db.query(self.model).filter(self.model.id == id).first()
 
-    def get_all(self) -> List[ModelType]:
+    def get_all(self) -> list[ModelType]:
         return self.db.query(self.model).all()
 
-    def create(self, data: dict) -> ModelType:
+    def create(self, data: CreateSchemaType) -> ModelType:
         instance = self.model(**data)
         self.db.add(instance)
         self.db.commit()
         self.db.refresh(instance)
         return instance
 
-    def update(self, id: int, data: dict) -> ModelType:
+    def update(self, id: int, data: dict) -> ModelType | None:
         instance = self.get(id)
         if instance:
             for key, value in data.items():
