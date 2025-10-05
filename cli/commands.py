@@ -11,9 +11,12 @@ from rich import print as rprint
 from database import get_db
 from modules.accounts.service import AccountService
 from modules.transactions.service import TransactionService
+from modules.currencies.service import CurrencyService
+from modules.currencies import initialize_currencies
 
-from models.accounts import AccountType, Currency
-from typing import cast
+from models.accounts import AccountType, Currency, CurrencyType, Pot, ExchangeRate
+from sqlalchemy import and_
+from typing import cast, Optional
 
 app = typer.Typer()
 console = Console()
@@ -25,7 +28,7 @@ engine = create_engine(DATABASE_URL)
 
 ACCOUNT_NAME = cast(str, typer.Option(..., "--name", "-n", help="Account name"))
 ACCOUNT_TYPE = cast(
-    AccountType,
+    str,
     typer.Option(
         "current",
         "--type",
@@ -33,38 +36,233 @@ ACCOUNT_TYPE = cast(
         help=f"Account type ({', '.join(t.value for t in AccountType)})",
     ),
 )
-ACCOUNT_CURRENCY = cast(
-    Currency,
-    typer.Option(
-        "GBP",
-        "--currency",
-        "-c",
-        help=f"Currency ({', '.join(c.value for c in Currency)})",
-    ),
-)
 
+
+# Currency Commands
+@app.command()
+def init_currencies():
+    """Initialize the database with common currencies"""
+    db = next(get_db())
+    try:
+        initialize_currencies(db)
+        rprint("[green]Successfully initialized currencies[/green]")
+    except Exception as e:
+        rprint(f"[red]Error initializing currencies:[/red] {str(e)}")
+
+@app.command()
+def list_currencies(
+    type: str = typer.Option(None, "--type", "-t", help="Filter by currency type (fiat/crypto)")
+):
+    """List all available currencies"""
+    db = next(get_db())
+    service = CurrencyService(db)
+    
+    curr_type = CurrencyType(type) if type else None
+    currencies = service.list_currencies(curr_type)
+    
+    table = Table("Code", "Name", "Symbol", "Type", "Decimals", "Active")
+    for curr in currencies:
+        table.add_row(
+            curr.code,
+            curr.name,
+            curr.symbol,
+            curr.type.value,
+            str(curr.decimals),
+            "✓" if curr.is_active else "✗"
+        )
+    console.print(table)
+
+@app.command()
+def rates(
+    base: str = typer.Option(..., "--base", "-b", help="Base currency code"),
+    target: str = typer.Option(None, "--target", "-t", help="Target currency code (optional)"),
+    days: int = typer.Option(7, "--days", "-d", help="Number of days of history to show")
+):
+    """View exchange rates for a currency"""
+    db = next(get_db())
+    service = CurrencyService(db)
+    
+    try:
+        base_currency = service.get_by_code(base)
+        if not base_currency:
+            rprint(f"[red]Currency not found:[/red] {base}")
+            return
+            
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # If target currency specified, show rate history for that pair
+        if target:
+            target_currency = service.get_by_code(target)
+            if not target_currency:
+                rprint(f"[red]Currency not found:[/red] {target}")
+                return
+                
+            table = Table("Date", f"1 {base} =", f"{target}")
+            rates = service.db.query(ExchangeRate).filter(
+                and_(
+                    ExchangeRate.from_currency_id == base_currency.id,
+                    ExchangeRate.to_currency_id == target_currency.id,
+                    ExchangeRate.timestamp >= start_date,
+                    ExchangeRate.timestamp <= end_date
+                )
+            ).order_by(ExchangeRate.timestamp.desc()).all()
+            
+            for rate in rates:
+                table.add_row(
+                    rate.timestamp.strftime("%Y-%m-%d"),
+                    "=",
+                    f"{rate.rate:.{target_currency.decimals}f}"
+                )
+            
+            if not rates:
+                rprint(f"[yellow]No exchange rates found for {base}/{target} in the last {days} days[/yellow]")
+                return
+                
+            console.print(f"\nExchange rates for {base}/{target}:")
+            console.print(table)
+            
+        # Otherwise show latest rates for all currencies
+        else:
+            table = Table("Currency", "Code", f"1 {base} =")
+            currencies = service.list_currencies()
+            
+            for curr in currencies:
+                if curr.id != base_currency.id:
+                    rate = service.get_exchange_rate(base, curr.code)
+                    if rate:
+                        table.add_row(
+                            curr.name,
+                            curr.code,
+                            f"{rate:.{curr.decimals}f}"
+                        )
+            
+            console.print(f"\nLatest exchange rates for {base}:")
+            console.print(table)
+            
+    except Exception as e:
+        rprint(f"[red]Error getting exchange rates:[/red] {str(e)}")
+
+@app.command()
+def convert(
+    amount: float = typer.Option(..., "--amount", "-a", help="Amount to convert"),
+    from_currency: str = typer.Option(..., "--from", "-f", help="From currency code"),
+    to_currency: str = typer.Option(..., "--to", "-t", help="To currency code")
+):
+    """Convert an amount between currencies"""
+    db = next(get_db())
+    service = CurrencyService(db)
+    
+    try:
+        # Get currencies
+        from_curr = service.get_by_code(from_currency)
+        to_curr = service.get_by_code(to_currency)
+        if not from_curr or not to_curr:
+            rprint("[red]One or both currencies not found[/red]")
+            return
+            
+        # Get conversion rate
+        rate = service.get_exchange_rate(from_currency, to_currency)
+        if rate is None:
+            rprint(f"[red]No exchange rate found for {from_currency}/{to_currency}[/red]")
+            return
+            
+        # Calculate conversion
+        from_amount = Decimal(str(amount))
+        to_amount = from_amount * rate
+        
+        # Show results
+        rprint(f"\nCurrency Conversion:")
+        rprint(f"{from_curr.symbol}{amount:.{from_curr.decimals}f} {from_curr.code} = "
+               f"{to_curr.symbol}{to_amount:.{to_curr.decimals}f} {to_curr.code}")
+        rprint(f"\nRate: 1 {from_curr.code} = {rate:.{to_curr.decimals}f} {to_curr.code}")
+        
+    except Exception as e:
+        rprint(f"[red]Conversion failed:[/red] {str(e)}")
+
+@app.command()
+def set_rate(
+    from_currency: str = typer.Option(..., "--from", "-f", help="From currency code"),
+    to_currency: str = typer.Option(..., "--to", "-t", help="To currency code"),
+    rate: float = typer.Option(..., "--rate", "-r", help="Exchange rate (1 FROM = x TO)"),
+):
+    """Set the exchange rate between two currencies"""
+    db = next(get_db())
+    service = CurrencyService(db)
+    
+    try:
+        exchange_rate = service.set_exchange_rate(
+            from_currency_code=from_currency,
+            to_currency_code=to_currency,
+            rate=Decimal(str(rate))
+        )
+        
+        # Also set the inverse rate automatically
+        inverse_rate = Decimal(1) / Decimal(str(rate))
+        service.set_exchange_rate(
+            from_currency_code=to_currency,
+            to_currency_code=from_currency,
+            rate=inverse_rate
+        )
+        
+        rprint(f"[green]Set exchange rates:[/green]")
+        rprint(f"1 {from_currency} = {rate} {to_currency}")
+        rprint(f"1 {to_currency} = {inverse_rate:.8f} {from_currency}")
+    except Exception as e:
+        rprint(f"[red]Error setting exchange rate:[/red] {str(e)}")
+
+@app.command()
+def set_exchange_rate(
+    from_currency: str = typer.Option(..., "--from", "-f", help="From currency code"),
+    to_currency: str = typer.Option(..., "--to", "-t", help="To currency code"),
+    rate: float = typer.Option(..., "--rate", "-r", help="Exchange rate"),
+):
+    """Set the exchange rate between two currencies"""
+    db = next(get_db())
+    service = CurrencyService(db)
+    try:
+        exchange_rate = service.set_exchange_rate(
+            from_currency_code=from_currency,
+            to_currency_code=to_currency,
+            rate=Decimal(str(rate))
+        )
+        rprint(f"[green]Set exchange rate:[/green] 1 {from_currency} = {rate} {to_currency}")
+    except Exception as e:
+        rprint(f"[red]Error setting exchange rate:[/red] {str(e)}")
 
 # Account Commands
 @app.command()
 def create_account(
     name: str = ACCOUNT_NAME,
-    type: AccountType = ACCOUNT_TYPE,
-    currency: Currency = ACCOUNT_CURRENCY,
+    type: str = ACCOUNT_TYPE,
+    currency_code: str = typer.Option("GBP", "--currency", "-c", help="Currency code"),
+    balance: float = typer.Option(0.0, "--balance", "-b", help="Initial balance"),
 ):
     """Create a new account"""
     db = next(get_db())
-    service = AccountService(db)
+    account_service = AccountService(db)
+    currency_service = CurrencyService(db)
+    
     try:
-        account = service.create_account(
-            name=name, account_type=type, currency=currency
+        # Verify currency exists
+        currency = currency_service.get_by_code(currency_code)
+        if not currency:
+            rprint(f"[red]Error:[/red] Currency {currency_code} not found")
+            return
+            
+        account = account_service.create_account(
+            name=name,
+            account_type=type,
+            currency_id=currency.id,
+            initial_balance=Decimal(str(balance))
         )
-        # curr_symbol = Currency(currency).symbol
-        rprint(
-            f"[green]Created account:[/green] {account.name} (ID: {account.id}) [{currency}]"
-        )
+        
+        rprint(f"[green]Created account:[/green] {account.name} (ID: {account.id})")
+        rprint(f"Currency: {currency.code} ({currency.symbol})")
+        if balance > 0:
+            rprint(f"Initial balance: {currency.symbol}{balance:.{currency.decimals}f}")
     except Exception as e:
         rprint(f"[red]Error creating account:[/red] {str(e)}")
-
 
 @app.command()
 def list_accounts():
@@ -89,10 +287,10 @@ def list_accounts():
             str(account.id),
             account.name,
             account.type,
-            account.currency.value,
-            f"{symbol}{account.balance:.2f}",
-            f"{symbol}{pot_balance:.2f}",
-            f"{symbol}{available:.2f}",
+            f"{account.currency.code} ({account.currency.type.value})",
+            f"{symbol}{account.balance:.{account.currency.decimals}f}",
+            f"{symbol}{float(pot_balance):.{account.currency.decimals}f}",
+            f"{symbol}{float(available):.{account.currency.decimals}f}",
         )
     console.print(table)
 
@@ -148,15 +346,58 @@ def transfer(
     amount: str = AMOUNT,
     description: str = DESCRIPTION,
 ):
-    """Transfer money between accounts"""
+    """Transfer money between accounts (with automatic currency conversion)"""
     db = next(get_db())
-    service = AccountService(db)
-    amount_decimal: Decimal = Decimal(amount)
+    account_service = AccountService(db)
+    transaction_service = TransactionService(db)
+    currency_service = CurrencyService(db)
+    
     try:
-        _ = service.transfer(
-            from_id=from_id, to_id=to_id, amount=amount_decimal, description=description
+        # Get accounts to show currency info
+        from_account = account_service.get(from_id)
+        to_account = account_service.get(to_id)
+        if not from_account or not to_account:
+            raise ValueError("One or both accounts not found")
+            
+        amount_decimal = Decimal(amount)
+            
+        # If currencies differ, show exchange rate info
+        if from_account.currency_id != to_account.currency_id:
+            rate = currency_service.get_exchange_rate(
+                from_account.currency.code,
+                to_account.currency.code
+            )
+            if rate is None:
+                raise ValueError(
+                    f"No exchange rate found from {from_account.currency.code} "
+                    f"to {to_account.currency.code}"
+                )
+            converted_amount = amount_decimal * rate
+            
+            rprint(f"Exchange rate: 1 {from_account.currency.code} = "
+                  f"{rate:.{to_account.currency.decimals}f} {to_account.currency.code}")
+            rprint(f"Converting {from_account.currency.symbol}{amount_decimal:.{from_account.currency.decimals}f} to "
+                  f"{to_account.currency.symbol}{converted_amount:.{to_account.currency.decimals}f}")
+        
+        # Perform transfer
+        transaction = transaction_service.create_transfer(
+            from_id, to_id, amount_decimal, description
         )
-        rprint(f"[green]Successfully transferred[/green] {amount:.2f}")
+        
+        # Show success message with proper currency symbols
+        debit_legs = [leg for leg in transaction.legs if leg.debit is not None and leg.debit > 0]
+        credit_legs = [leg for leg in transaction.legs if leg.credit is not None and leg.credit > 0]
+        from_amount = debit_legs[0].debit if debit_legs else Decimal("0")
+        to_amount = credit_legs[0].credit if credit_legs else Decimal("0")
+        
+        rprint(f"[green]Successfully transferred[/green] "
+               f"{from_account.currency.symbol}{from_amount:.{from_account.currency.decimals}f} "
+               f"from {from_account.name}")
+        if from_account.currency_id != to_account.currency_id:
+            rprint(f"[green]Received:[/green] "
+                   f"{to_account.currency.symbol}{to_amount:.{to_account.currency.decimals}f} "
+                   f"in {to_account.name}")
+            
     except Exception as e:
         rprint(f"[red]Transfer failed:[/red] {str(e)}")
 
@@ -174,8 +415,13 @@ def list_pots(account_id: int | None = ACCOUNT_ID):
 
     for account in accounts:
         if account and account.pots:
-            console.print(f"\n[bold]{account.name}[/bold]")
+            console.print(f"\n[bold]{account.name}[/bold] ({account.currency.code})")
             table = Table("ID", "Name", "Target", "Current Amount", "Progress")
+            
+            # Get currency details for formatting
+            decimals = account.currency.decimals
+            symbol = account.currency.symbol
+            
             for pot in account.pots:
                 balance = transaction_service.get_pot_balance(pot.id)
                 progress = (
@@ -186,10 +432,10 @@ def list_pots(account_id: int | None = ACCOUNT_ID):
                 table.add_row(
                     str(pot.id),
                     pot.name,
-                    f"{Decimal(str(pot.target_amount)):.2f}"
+                    f"{symbol}{Decimal(str(pot.target_amount)):.{decimals}f}"
                     if pot.target_amount
                     else "No target",
-                    f"{balance:.2f}",
+                    f"{symbol}{balance:.{decimals}f}",
                     progress,
                 )
             console.print(table)
@@ -212,17 +458,27 @@ def pot_transfer(
     """Transfer money to/from a savings pot"""
     db = next(get_db())
     service = TransactionService(db)
+    account_service = AccountService(db)
     amount_decimal: Decimal = Decimal(amount)
+    
     try:
+        # Get account and pot details for proper formatting
+        account = account_service.get(account_id)
+        if not account:
+            raise ValueError("Account not found")
+            
+        decimals = account.currency.decimals
+        symbol = account.currency.symbol
+        
         if direction == "to_pot":
-            _ = service.transfer_to_pot(
+            transaction = service.transfer_to_pot(
                 account_id=account_id,
                 pot_id=pot_id,
                 amount=amount_decimal,
                 description=description,
             )
         elif direction == "from_pot":
-            _ = service.transfer_from_pot(
+            transaction = service.transfer_from_pot(
                 account_id=account_id,
                 pot_id=pot_id,
                 amount=amount_decimal,
@@ -232,7 +488,8 @@ def pot_transfer(
             raise ValueError("Direction must be either 'to_pot' or 'from_pot'")
 
         rprint(
-            f"[green]Successfully transferred[/green] {amount_decimal:.2f} {direction.replace('_', ' ')}"
+            f"[green]Successfully transferred[/green] "
+            f"{symbol}{amount_decimal:.{decimals}f} {direction.replace('_', ' ')}"
         )
     except Exception as e:
         rprint(f"[red]Pot transfer failed:[/red] {str(e)}")
@@ -253,9 +510,19 @@ def pot_to_pot(
     """Transfer money between two pots in the same account"""
     db = next(get_db())
     service = TransactionService(db)
-    amount_decimal = Decimal(amount)
+    account_service = AccountService(db)
+    amount_decimal: Decimal = Decimal(amount)
+    
     try:
-        _ = service.transfer_between_pots(
+        # Get account details for proper formatting
+        account = account_service.get(account_id)
+        if not account:
+            raise ValueError("Account not found")
+            
+        decimals = account.currency.decimals
+        symbol = account.currency.symbol
+        
+        transaction = service.transfer_between_pots(
             account_id=account_id,
             from_pot_id=from_pot,
             to_pot_id=to_pot,
@@ -263,49 +530,71 @@ def pot_to_pot(
             description=description,
         )
         rprint(
-            f"[green]Successfully transferred[/green] {amount_decimal:.2f} between pots"
+            f"[green]Successfully transferred[/green] "
+            f"{symbol}{amount_decimal:.{decimals}f} between pots"
         )
     except Exception as e:
         rprint(f"[red]Pot transfer failed:[/red] {str(e)}")
 
 
-DAYS = cast(
-    int, typer.Option(30, "--days", "-d", help="Number of days of history to show")
-)
-
-
 @app.command()
 def pot_transactions(
     pot_id: int = POT_ID,
-    days: int = DAYS,
+    days: int = typer.Option(30, "--days", "-d", help="Number of days of history to show"),
 ):
     """Show transaction history for a specific pot"""
     db = next(get_db())
     service = TransactionService(db)
+    account_service = AccountService(db)
 
-    end_date = datetime.now().date()
-    start_date = end_date - timedelta(days=days)
+    try:
+        # Get pot and account details for proper formatting
+        pot = db.query(Pot).get(pot_id)
+        if not pot:
+            raise ValueError("Pot not found")
+            
+        account = account_service.get(pot.account_id)
+        if not account:
+            raise ValueError("Account not found")
+            
+        decimals = account.currency.decimals
+        symbol = account.currency.symbol
 
-    transactions = service.get_pot_transactions(pot_id, start_date, end_date)
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
 
-    if not transactions:
-        rprint(
-            "[yellow]No transactions found for this pot in the specified time period[/yellow]"
-        )
-        return
+        transactions = service.get_pot_transactions(pot_id, start_date, end_date)
 
-    table = Table("Date", "Description", "Amount", "Type")
-    for tx in transactions:
-        for leg in service.get_transaction_legs(tx.id):
-            if leg.pot_id == pot_id:
-                amount = Decimal(str(leg.credit or 0)) or -Decimal(str(leg.debit or 0))
-                table.add_row(
-                    tx.date.strftime("%Y-%m-%d"),
-                    tx.description or "",
-                    f"{abs(amount):.2f}",
-                    "IN" if amount > Decimal("0.00") else "OUT",
-                )
-    console.print(table)
+        if not transactions:
+            rprint(
+                "[yellow]No transactions found for this pot in the specified time period[/yellow]"
+            )
+            return
+
+        console.print(f"\nTransactions for pot: {pot.name}")
+        console.print(f"Currency: {account.currency.code} ({symbol})")
+        table = Table("Date", "Description", "Amount", "Type")
+        
+        for tx in transactions:
+            for leg in service.get_transaction_legs(tx.id):
+                if leg.pot_id == pot_id:
+                    amount = leg.credit if leg.credit is not None else (-leg.debit if leg.debit is not None else Decimal("0"))
+                    table.add_row(
+                        tx.date.strftime("%Y-%m-%d"),
+                        tx.description or "",
+                        f"{symbol}{abs(amount):.{decimals}f}",
+                        "IN" if amount > 0 else "OUT",
+                    )
+        console.print(table)
+    except Exception as e:
+        rprint(f"[red]Error:[/red] {str(e)}")
+
+
+FROM_POT = cast(int, typer.Option(..., "--from", "-f", help="Source pot ID"))
+TO_POT = cast(int, typer.Option(..., "--to", "-t", help="Destination pot ID"))
+
+
+
 
 
 SHOW_LEGS = cast(
@@ -316,7 +605,7 @@ SHOW_LEGS = cast(
 @app.command()
 def list_transactions(
     account_id: int | None = ACCOUNT_ID,
-    days: int = DAYS,
+    days: int = typer.Option(30, "--days", "-d", help="Number of days of history to show"),
     show_legs: bool = SHOW_LEGS,
 ):
     """List recent transactions"""

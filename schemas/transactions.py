@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 class TransactionBase(BaseModel):
@@ -7,11 +7,13 @@ class TransactionBase(BaseModel):
     date: date
     amount: Decimal
     account_id: int
+    currency_id: int
 
 class TransferIn(BaseModel):
     from_account_id: int
     to_account_id: int
     amount: Decimal
+    currency_id: int
     description: str = ""
     date: date
 
@@ -21,6 +23,7 @@ class PotTransferIn(BaseModel):
     pot_id: int
     direction: str = Field(..., pattern="^(to_pot|from_pot)$")
     amount: Decimal
+    currency_id: int
     date: date
 
 
@@ -29,13 +32,24 @@ class ExternalPaymentIn(BaseModel):
     internal_account_id: int
     external_account_id: int
     amount: Decimal
+    currency_id: int
     note: str = ""
     date: date
+
+class TransactionResponse(BaseModel):
+    id: int
+    description: str | None
+    date: datetime
+    currency_id: int
+    
+    class Config:
+        from_attributes = True
 
 class TransactionCreate(BaseModel):
     source_account_id: int
     destination_account_id: int
     amount: Decimal
+    currency_id: int
     description: str | None = None
 
 class Transaction(TransactionBase):
@@ -47,6 +61,7 @@ class ExternalTransactionCreate(BaseModel):
     internal_account_id: int
     external_account_id: int
     amount: Decimal
+    currency_id: int
     direction: str  # "in" (money coming in) or "out" (money going out)
     description: str | None = None
 from pydantic import BaseModel, condecimal

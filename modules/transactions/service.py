@@ -1,8 +1,9 @@
 from modules.common.base_service import BaseService
 from models.transactions import Transaction, TransactionLeg
 from models.accounts import Account, Pot
+from modules.currencies.service import CurrencyService
 from sqlalchemy.orm import Session
-from typing import cast, TypedDict, NotRequired
+from typing import cast, TypedDict, NotRequired, Optional
 from decimal import Decimal
 from datetime import datetime, date, timezone
 
@@ -25,6 +26,40 @@ TransactionLegDict = CreditLeg | DebitLeg
 class TransactionService(BaseService[Transaction]):
     def __init__(self, db: Session):
         super().__init__(Transaction, db)
+        self.currency_service = CurrencyService(db)
+
+    def _convert_amount(self, 
+                       amount: Decimal,
+                       from_account: Account,
+                       to_account: Account,
+                       transaction_date: Optional[date] = None) -> tuple[Decimal, Decimal]:
+        """
+        Convert amount between account currencies if needed.
+        Returns tuple of (from_amount, to_amount)
+        """
+        if from_account.currency_id == to_account.currency_id:
+            return amount, amount
+            
+        # Convert amount using latest exchange rate
+        datetime_for_rate = datetime.combine(
+            transaction_date or datetime.now(timezone.utc).date(),
+            datetime.min.time()
+        )
+        
+        converted_amount = self.currency_service.convert_amount(
+            amount=amount,
+            from_currency_code=from_account.currency.code,
+            to_currency_code=to_account.currency.code,
+            at_time=datetime_for_rate
+        )
+        
+        if converted_amount is None:
+            raise ValueError(
+                f"No exchange rate found from {from_account.currency.code} "
+                f"to {to_account.currency.code}"
+            )
+            
+        return amount, converted_amount
 
     def create_transfer(
         self,
@@ -41,12 +76,25 @@ class TransactionService(BaseService[Transaction]):
         to_account = cast(Account, self.db.query(Account).get(to_account_id))
         if not from_account or not to_account:
             raise ValueError("One or both accounts not found")
+            
+        tx_date = transaction_date or datetime.now(timezone.utc).date()
+
+        # Convert amount if currencies differ
+        from_amount, to_amount = self._convert_amount(
+            amount=amount,
+            from_account=from_account,
+            to_account=to_account,
+            transaction_date=tx_date
+        )
 
         # Create the main transaction
         transaction = Transaction(
-            description=description
-            or f"Transfer from {from_account.name} to {to_account.name}",
-            date=transaction_date or datetime.now(timezone.utc).date(),
+            description=description or 
+                       f"Transfer {from_account.currency.symbol}{from_amount:.{from_account.currency.decimals}f} "
+                       f"from {from_account.name} to {to_account.name} "
+                       f"({to_account.currency.symbol}{to_amount:.{to_account.currency.decimals}f})",
+            date=tx_date,
+            currency_id=from_account.currency_id  # Use source account's currency for the transaction
         )
         self.db.add(transaction)
         self.db.flush()  # Get the transaction ID
@@ -55,8 +103,10 @@ class TransactionService(BaseService[Transaction]):
         debit_leg = TransactionLeg(
             transaction_id=transaction.id,
             account_id=from_account_id,
-            debit=amount,
+            debit=from_amount,
             credit=None,
+            currency_id=from_account.currency_id,
+            exchange_rate=Decimal('1.0')  # Since this is in the transaction's base currency
         )
 
         # Create the credit leg (money entering the destination account)
@@ -64,12 +114,14 @@ class TransactionService(BaseService[Transaction]):
             transaction_id=transaction.id,
             account_id=to_account_id,
             debit=None,
-            credit=amount,
+            credit=to_amount,
+            currency_id=to_account.currency_id,
+            exchange_rate=(to_amount / from_amount) if from_amount != to_amount else Decimal('1.0')
         )
 
         # Update account balances
-        from_account.balance = from_account.balance - amount
-        to_account.balance = to_account.balance + amount
+        from_account.balance = from_account.balance - from_amount
+        to_account.balance = to_account.balance + to_amount
 
         self.db.add_all([debit_leg, credit_leg])
         self.db.commit()
@@ -99,10 +151,16 @@ class TransactionService(BaseService[Transaction]):
                 "Transaction legs must balance - total debits must equal total credits"
             )
 
-        # Create the main transaction
+        # Get the first account to use its currency as the base currency for the transaction
+        first_account = cast(Account, self.db.query(Account).get(legs[0]["account_id"]))
+        if not first_account:
+            raise ValueError("First account not found")
+
+        # Create the main transaction using the first account's currency as base
         transaction = Transaction(
             description=description,
             date=transaction_date or datetime.now(timezone.utc).date(),
+            currency_id=first_account.currency_id
         )
         self.db.add(transaction)
         self.db.flush()
@@ -110,6 +168,31 @@ class TransactionService(BaseService[Transaction]):
         # Create all legs
         transaction_legs: list[TransactionLeg] = []
         for leg in legs:
+            account = cast(Account, self.db.query(Account).get(leg["account_id"]))
+            if not account:
+                raise ValueError(f"Account {leg['account_id']} not found")
+
+            # Calculate exchange rate if currencies differ
+            exchange_rate = Decimal('1.0')
+            if account.currency_id != first_account.currency_id:
+                # Get the exchange rate for the transaction date
+                datetime_for_rate = datetime.combine(
+                    transaction_date or datetime.now(timezone.utc).date(),
+                    datetime.min.time()
+                )
+                
+                converted_amount = self.currency_service.get_exchange_rate(
+                    from_currency_code=first_account.currency.code,
+                    to_currency_code=account.currency.code,
+                    at_time=datetime_for_rate
+                )
+                if converted_amount is None:
+                    raise ValueError(
+                        f"No exchange rate found from {first_account.currency.code} "
+                        f"to {account.currency.code}"
+                    )
+                exchange_rate = converted_amount
+
             transaction_legs.append(
                 TransactionLeg(
                     transaction_id=transaction.id,
@@ -117,6 +200,8 @@ class TransactionService(BaseService[Transaction]):
                     pot_id=leg.get("pot_id"),
                     debit=leg.get("debit"),
                     credit=leg.get("credit"),
+                    currency_id=account.currency_id,
+                    exchange_rate=exchange_rate
                 )
             )
 

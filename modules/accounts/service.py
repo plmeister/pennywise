@@ -18,18 +18,30 @@ class AccountService(BaseService[Account]):
         self,
         name: str,
         account_type: str = "current",
-        currency: str = "GBP",
+        currency_id: int = 1,  # Default to first currency (usually GBP)
+        initial_balance: Decimal = Decimal("0.00")
     ) -> Account:
         # Create the account with zero balance
         account = Account(
-            **{
-                "name": name,
-                "type": AccountType(account_type),
-                "currency": Currency(currency),
-                "balance": 0,
-            }
+            name=name,
+            type=AccountType(account_type),
+            currency_id=currency_id,
+            balance=Decimal("0.00")
         )
-
+        
+        self.db.add(account)
+        self.db.commit()
+        self.db.refresh(account)
+        
+        # If there's an initial balance, create a funding transaction
+        if initial_balance > 0:
+            self.transaction_service.create_multi_leg_transaction(
+                legs=[
+                    {'account_id': account.id, 'credit': initial_balance}
+                ],
+                description=f"Initial balance for {name}"
+            )
+            
         return account
 
     def get_balance(self, account_id: int, as_of_date: date | None = None) -> Decimal:
@@ -38,6 +50,10 @@ class AccountService(BaseService[Account]):
         if not account:
             raise ValueError("Account not found")
         return self.transaction_service.get_account_balance(account_id, as_of_date)
+        
+    def get_pot(self, pot_id: int) -> Pot | None:
+        """Get a pot by its ID"""
+        return self.db.query(Pot).get(pot_id)
 
     def transfer(
         self, from_id: int, to_id: int, amount: Decimal, description: str | None = None

@@ -54,11 +54,20 @@ def pot_transfer(data: PotTransferIn, db: Session = Depends(get_db)):
 
         amount = data.amount
 
-        transaction = service.create_pot_transfer(
-            pot_id=data.pot_id,
-            account_id=data.account_id,
-            amount=amount,
-            direction=data.direction
+        # Handle direction
+        if data.direction == "to_pot":
+            transaction = service.transfer_to_pot(
+                account_id=data.account_id,
+                pot_id=data.pot_id,
+                amount=amount,
+                description=None
+            )
+        else:
+            transaction = service.transfer_from_pot(
+                account_id=data.account_id,
+                pot_id=data.pot_id,
+                amount=amount,
+                description=None
         )
         
         return {"message": "Pot transfer completed", "transaction_id": transaction.id}
@@ -88,12 +97,11 @@ def external_payment(data: ExternalPaymentIn, db: Session = Depends(get_db)):
             from_id = data.external_account_id
             to_id = data.internal_account_id
 
-        transaction = service.create_transaction(
+        transaction = service.create_transfer(
             amount=amount,
-            description=data.note,
             from_account_id=from_id,
             to_account_id=to_id,
-            date=datetime.utcnow()
+            description=data.note
         )
         
         account_service.transfer(
@@ -118,8 +126,8 @@ def get_transaction(transaction_id: int, db: Session = Depends(get_db)):
 @router.get("/account/{account_id}")
 def get_account_transactions(
     account_id: int,
-    start_date: datetime = None,
-    end_date: datetime = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     db: Session = Depends(get_db)
 ):
     service = TransactionService(db)
