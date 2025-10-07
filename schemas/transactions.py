@@ -2,12 +2,31 @@ from pydantic import BaseModel, Field
 from datetime import date, datetime
 from decimal import Decimal
 
+from enum import Enum
+
+class TransactionType(str, Enum):
+    """Type of transaction"""
+    EXPENSE = "expense"  # Regular expense
+    INCOME = "income"    # Regular income
+    TRANSFER = "transfer"  # Inter-account transfer
+    
+class TransferStatus(str, Enum):
+    """Status of a transfer transaction"""
+    UNMATCHED = "unmatched"      # No matching transfer found yet
+    PENDING = "pending"          # Potential match found but not confirmed
+    MATCHED = "matched"          # Confirmed match with another transaction
+    NOT_TRANSFER = "not_transfer"  # Confirmed not a transfer
+
 class TransactionBase(BaseModel):
     description: str
     date: date
     amount: Decimal
     account_id: int
     currency_id: int
+    transaction_type: TransactionType = Field(default=TransactionType.EXPENSE)
+    transfer_status: TransferStatus = Field(default=TransferStatus.UNMATCHED)
+    linked_transaction_id: int | None = Field(default=None)  # ID of matching transfer transaction
+    raw_description: str | None = Field(default=None)  # Original description before cleaning
 
 class TransferIn(BaseModel):
     from_account_id: int

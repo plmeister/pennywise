@@ -51,6 +51,10 @@ class AccountService(BaseService[Account]):
             raise ValueError("Account not found")
         return self.transaction_service.get_account_balance(account_id, as_of_date)
         
+    def get_by_name(self, name: str) -> Account | None:
+        """Get an account by its name"""
+        return self.db.query(Account).filter(Account.name == name).first()
+        
     def get_pot(self, pot_id: int) -> Pot | None:
         """Get a pot by its ID"""
         return self.db.query(Pot).get(pot_id)
