@@ -32,7 +32,6 @@ class Currency(Base):
     """Currency model for both fiat and crypto currencies"""
     __tablename__ = "currencies"
     
-    id: Mapped[int] = mapped_column(primary_key=True)
     code: Mapped[str] = mapped_column(String, unique=True, index=True)  # e.g., "USD", "BTC"
     name: Mapped[str] = mapped_column(String)  # e.g., "US Dollar", "Bitcoin"
     symbol: Mapped[str] = mapped_column(String)  # e.g., "$", "₿"

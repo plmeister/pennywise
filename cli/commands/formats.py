@@ -1,7 +1,9 @@
 """CLI commands for managing import formats"""
 from pathlib import Path
 import typer
-from tabulate import tabulate
+from rich.console import Console
+from rich.table import Table
+from rich import print as rprint
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -10,82 +12,66 @@ from modules.imports.formats import ImportFormatService
 from modules.accounts.service import AccountService
 from schemas.import_formats import ImportFormat
 
-app = typer.Typer()
+formats_app = typer.Typer()
+
+
+class FormatContext:
+    def __init__(self, db_path: str):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        engine = create_engine(f"sqlite:///{db_path}")
+        SessionLocal = sessionmaker(bind=engine)
+        self.db = SessionLocal()
+        self.console = Console()
+
+@formats_app.callback()
+def main(ctx: typer.Context, db_path: str = typer.Option("budget.db", help="Path to database file")):
+    """Formats CLI group callback to set up DB/session."""
+    ctx.obj = FormatContext(db_path)
 
 def get_session() -> Session:
     """Get database session"""
     return next(get_db())
 
-@app.command()
-def list_formats():
-    """List available import formats"""
-    db = get_session()
-    service = ImportFormatService(db)
+@formats_app.command()
+def list(ctx: typer.Context):
+    """List all import formats"""
+    context: FormatContext = ctx.obj
+    service = ImportFormatService(context.db)
     formats = service.list_formats()
-    
-    rows = []
+    table = Table("ID", "Name", "Date Col", "Amount Col", "Desc Col", "Account")
     for fmt in formats:
-        rows.append([
-            fmt.id,
-            fmt.name,
-            fmt.date_column,
-            fmt.amount_column,
-            fmt.description_column,
-            fmt.account.name if fmt.account else None
-        ])
-        
-    if rows:
-        print(tabulate(rows, headers=[
-            "ID",
-            "Name",
-            "Date Column",
-            "Amount Column",
-            "Description Column",
-            "Default Account"
-        ]))
-    else:
-        print("No import formats found")
+        table.add_row(
+            str(fmt.id),
+            str(fmt.name),
+            str(fmt.date_column),
+            str(fmt.amount_column),
+            str(fmt.description_column),
+            str(fmt.account.name) if getattr(fmt, "account", None) else ""
+        )
+    context.console.print(table)
 
-@app.command()
-def create_format(
-    name: str = typer.Argument(..., help="Name of the format"),
-    date_column: str = typer.Option(..., help="Name of the date column"),
-    amount_column: str = typer.Option(..., help="Name of the amount column"),
-    description_column: str = typer.Option(..., help="Name of the description column"),
-    type_column: Optional[str] = typer.Option(None, help="Name of the transaction type column"),
-    balance_column: Optional[str] = typer.Option(None, help="Name of the balance column"),
-    reference_column: Optional[str] = typer.Option(None, help="Name of the reference column"),
-    date_format: str = typer.Option(..., help="Format string for parsing dates"),
-    thousands_separator: str = typer.Option(",", help="Character used as thousands separator"),
-    decimal_separator: str = typer.Option(".", help="Character used as decimal separator"),
-    encoding: str = typer.Option("utf-8", help="File encoding"),
-    notes: Optional[str] = typer.Option(None, help="Additional notes about the format")
+@formats_app.command()
+def add(
+    ctx: typer.Context,
+    name: str = typer.Option(..., "--name", "-n", help="Format name"),
+    columns: str = typer.Option(..., "--columns", "-c", help="Comma-separated columns")
 ):
-    """Create a new import format"""
-    db = get_session()
-    service = ImportFormatService(db)
-    # Check if format already exists
-    if service.get_by_name(name):
-        typer.echo(f"Error: Format with name '{name}' already exists")
-        raise typer.Exit(1)
-    fmt = ImportFormat(
-        name=name,
-        date_column=date_column,
-        amount_column=amount_column,
-        description_column=description_column,
-        type_column=type_column,
-        balance_column=balance_column,
-        reference_column=reference_column,
-        date_format=date_format,
-        thousands_separator=thousands_separator,
-        decimal_separator=decimal_separator,
-        encoding=encoding,
-        notes=notes
-    )
-    service.create(fmt)
-    typer.echo(f"Created import format '{name}'")
+    """Add a new import format"""
+    context: FormatContext = ctx.obj
+    service = ImportFormatService(context.db)
+    try:
+        col_list = columns.split(",")
+        fmt = service.create({
+            "name": name,
+            "date_column": col_list[0] if len(col_list) > 0 else "",
+            "amount_column": col_list[1] if len(col_list) > 1 else "",
+            "description_column": col_list[2] if len(col_list) > 2 else ""
+        })
+        rprint(f"[green]Added format:[/green] {fmt.name}")
+    except Exception as e:
+        rprint(f"[red]Error adding format:[/red] {str(e)}")
 
-@app.command()
 def set_account_format(
     format_id: int = typer.Argument(..., help="ID of the format"),
     account_name: str = typer.Argument(..., help="Name of the account")
@@ -101,35 +87,4 @@ def set_account_format(
     account = account_service.get_by_name(account_name)
     if not account:
         typer.echo(f"Error: Account '{account_name}' not found")
-        raise typer.Exit(1)
-    format_service.set_account_format(account.id, format_id)
-    typer.echo(f"Set import format '{fmt.name}' as default for account '{account_name}'")
-
-@app.command()
-def export_format(
-    format_id: int = typer.Argument(..., help="ID of the format"),
-    output_file: Path = typer.Argument(..., help="Output JSON file path")
-):
-    """Export import format to JSON file"""
-    db = get_session()
-    service = ImportFormatService(db)
-    fmt = service.get(format_id)
-    if not fmt:
-        typer.echo(f"Error: Import format {format_id} not found")
-        raise typer.Exit(1)
-    service.export_json(format_id, output_file)
-    typer.echo(f"Exported format '{fmt.name}' to {output_file}")
-
-@app.command()
-def import_format(
-    input_file: Path = typer.Argument(..., help="Input JSON file path", exists=True)
-):
-    """Import format from JSON file"""
-    db = get_session()
-    service = ImportFormatService(db)
-    try:
-        fmt = service.import_json(input_file)
-        typer.echo(f"Imported format '{fmt.name}'")
-    except Exception as e:
-        typer.echo(f"Error importing format: {e}")
         raise typer.Exit(1)

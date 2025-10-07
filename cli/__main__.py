@@ -2,14 +2,13 @@
 import typer
 from . import commands
 
-app = typer.Typer()
 
-# Add sub-commands
-app.add_typer(commands.accounts.app, name="account")
-app.add_typer(commands.currency.app, name="currency")
-app.add_typer(commands.formats.app, name="format")
-app.add_typer(commands.pots.app, name="pot")
-app.add_typer(commands.transactions.app, name="tx")
+app = typer.Typer()
+app.add_typer(commands.accounts.account_app, name="account")
+app.add_typer(commands.currency.currency_app, name="currency")
+app.add_typer(commands.formats.formats_app, name="format")
+app.add_typer(commands.pots.pots_app, name="pot")
+app.add_typer(commands.transactions.transactions_app, name="tx")
 
 def main():
     app()

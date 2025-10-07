@@ -8,7 +8,6 @@ from .accounts import Account, Pot, Currency
 
 class Transaction(Base):
     __tablename__: str = "transactions"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     description: Mapped[str] = mapped_column(String)
     date: Mapped[datetime] = mapped_column(Date)
     currency_id: Mapped[int] = mapped_column(Integer, ForeignKey("currencies.id"), nullable=False)
@@ -20,7 +19,6 @@ class Transaction(Base):
 
 class TransactionLeg(Base):
     __tablename__: str = "transaction_legs"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
     transaction_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("transactions.id"), nullable=False
     )
@@ -49,8 +47,3 @@ class TransactionLeg(Base):
     account: Mapped["Account"] = relationship("Account")
     pot: Mapped["Pot"] = relationship("Pot")
     currency: Mapped["Currency"] = relationship("Currency")
-
-
-Transaction.legs = relationship(
-    "TransactionLeg", back_populates="transaction", cascade="all, delete-orphan"
-)

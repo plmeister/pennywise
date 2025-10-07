@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import sessionmaker, DeclarativeBase, mapped_column, Mapped
 
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./budget.db"
@@ -11,8 +11,14 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-class Base(DeclarativeBase):
-    pass
+
+from sqlalchemy import Column, Integer
+
+class BaseModel:
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+class Base(DeclarativeBase, BaseModel):
+    __abstract__ = True
 
 
 # Base = declarative_base()

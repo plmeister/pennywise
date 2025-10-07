@@ -4,6 +4,23 @@ import logging
 import sys
 import json
 import typer
+from rich.console import Console
+
+imports_app = typer.Typer()
+
+class ImportContext:
+    def __init__(self, db_path: str):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        engine = create_engine(f"sqlite:///{db_path}")
+        SessionLocal = sessionmaker(bind=engine)
+        self.db = SessionLocal()
+        self.console = Console()
+
+@imports_app.callback()
+def main(ctx: typer.Context, db_path: str = typer.Option("budget.db", help="Path to database file")):
+    """Imports CLI group callback to set up DB/session."""
+    ctx.obj = ImportContext(db_path)
 from typing import Optional
 from sqlalchemy.orm import Session
 from rich import print
@@ -68,8 +85,9 @@ def create_format(
         
     return fmt
 
-@app.command("import")
+@imports_app.command()
 def import_statement(
+    ctx: typer.Context,
     file_path: Path = typer.Argument(..., help="Path to bank statement file", 
                                    exists=True, file_okay=True, dir_okay=False),
     account_id: str = typer.Option(..., "--account", "-a", help="ID of the account to import into"),
@@ -81,9 +99,9 @@ def import_statement(
                                              help="Path to format JSON file")
 ):
     """Import transactions from a bank statement"""
+    context: ImportContext = ctx.obj
     try:
-        session = get_session()
-        service = ImportService(model=Transaction, db=session)
+        service = ImportService(model=Transaction, db=context.db)
         
         # Get format definition
         fmt = None

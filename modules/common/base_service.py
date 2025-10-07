@@ -6,9 +6,6 @@ from database import Base
 
 ModelType = TypeVar("ModelType")
 
-CreateSchemaType = TypeVar("CreateSchemaType", bound=Base)
-
-
 class BaseService(Generic[ModelType]):
     model: type[ModelType]
     db: Session
@@ -18,17 +15,10 @@ class BaseService(Generic[ModelType]):
         self.db = db
 
     def get(self, id: int) -> ModelType | None:
-        return self.db.query(self.model).filter(self.model.id == id).first()
+        return self.db.query(self.model).filter(Base.id == id).first()
 
     def get_all(self) -> list[ModelType]:
         return self.db.query(self.model).all()
-
-    def create(self, data: CreateSchemaType) -> ModelType:
-        instance = self.model(**data)
-        self.db.add(instance)
-        self.db.commit()
-        self.db.refresh(instance)
-        return instance
 
     def update(self, id: int, data: dict) -> ModelType | None:
         instance = self.get(id)

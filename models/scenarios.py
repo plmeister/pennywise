@@ -7,7 +7,6 @@ from decimal import Decimal
 class ForecastScenario(Base):
     __tablename__ = "forecast_scenarios"
 
-    id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(Text)
     start_date = Column(Date, nullable=False)
@@ -21,7 +20,6 @@ class ForecastScenario(Base):
 class ScenarioTransaction(Base):
     __tablename__ = "scenario_transactions"
 
-    id = Column(Integer, primary_key=True)
     scenario_id = Column(Integer, ForeignKey("forecast_scenarios.id"), nullable=False)
     date = Column(Date, nullable=False)
     description = Column(String)
@@ -34,7 +32,6 @@ class ScenarioTransaction(Base):
 class ScenarioTransactionLeg(Base):
     __tablename__ = "scenario_transaction_legs"
 
-    id = Column(Integer, primary_key=True)
     transaction_id = Column(Integer, ForeignKey("scenario_transactions.id"), nullable=False)
     account_id = Column(Integer, ForeignKey("accounts.id"), nullable=False)
     amount = Column(Numeric(12, 2), nullable=False)  # Positive for inflow, negative for outflow

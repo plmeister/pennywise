@@ -18,7 +18,6 @@ class RecurrenceType(enum.Enum):
 class ScheduledTransaction(Base):
     __tablename__: str = "scheduled_transactions"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     description: Mapped[str] = mapped_column(String)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     from_account_id: Mapped[int] = mapped_column(

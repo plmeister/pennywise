@@ -8,7 +8,6 @@ class ImportFormat(Base):
     """Database model for import format definitions"""
     __tablename__ = "import_formats"
     
-    id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     date_column = Column(String, nullable=False)
     amount_column = Column(String, nullable=False)
