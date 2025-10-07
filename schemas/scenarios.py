@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import date
 from typing import List, Optional
 from decimal import Decimal
@@ -28,18 +28,12 @@ class ScenarioTransactionLeg(BaseModel):
     amount: Decimal
     category_id: Optional[int]
 
-    class Config:
-        orm_mode = True
-
 class ScenarioTransaction(BaseModel):
     id: int
     date: date
     description: Optional[str]
     is_materialised: bool
     legs: List[ScenarioTransactionLeg]
-
-    class Config:
-        orm_mode = True
 
 class ForecastScenario(BaseModel):
     id: int
@@ -48,6 +42,3 @@ class ForecastScenario(BaseModel):
     start_date: date
     end_date: date
     transactions: List[ScenarioTransaction]
-
-    class Config:
-        orm_mode = True

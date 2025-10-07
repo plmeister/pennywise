@@ -77,7 +77,7 @@ def create(
             name=name,
             account_type=type,
             currency_id=currency.id,
-            initial_balance=Decimal(str(balance))
+            
         )
         rprint(f"[green]Created account:[/green] {account.name} (ID: {account.id})")
         rprint(f"Currency: {currency.code} ({currency.symbol})")

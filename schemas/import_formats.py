@@ -1,5 +1,5 @@
 """Configurable bank statement format definitions"""
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
 class ImportFormat(BaseModel):
@@ -17,17 +17,3 @@ class ImportFormat(BaseModel):
     encoding: str = "utf-8-sig"
     currency_symbol: str = ""  # e.g., "£", "$", "€"
     notes: Optional[str] = None  # User notes about this format
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "name": "Starling GBP",
-                "date_column": "Date",
-                "amount_column": "Amount (GBP)",
-                "description_column": "Counter Party",
-                "type_column": "Reference",
-                "balance_column": "Balance (GBP)",
-                "date_format": "%d/%m/%Y",
-                "currency_symbol": "£"
-            }
-        }

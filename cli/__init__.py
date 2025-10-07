@@ -1,5 +1,5 @@
 """CLI module for Pennywise"""
 
-from .commands import main
+from . import main
 
 __all__ = ['main']

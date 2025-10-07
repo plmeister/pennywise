@@ -7,7 +7,7 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 from database import init_db
-from cli.commands import main
+from cli.main import main
 
 if __name__ == "__main__":
     init_db()  # Ensure database tables exist

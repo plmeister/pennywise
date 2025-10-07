@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from decimal import Decimal
 from models.accounts import AccountType
 
@@ -44,5 +44,4 @@ class AccountOut(AccountCreate):
     balance: Decimal
     pots: list[PotOut]
 
-    class Config:
-        from_attributes: bool = True
+    model_config = ConfigDict(from_attributes=True)

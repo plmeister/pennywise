@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from models.accounts import CurrencyType
 from database import Base
 from datetime import datetime
@@ -25,8 +25,7 @@ class CurrencyCreate(CurrencyBase):
 class Currency(CurrencyBase):
     id: int
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TransactionResponse(BaseModel):
     id: int

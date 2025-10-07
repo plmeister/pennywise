@@ -23,5 +23,3 @@ class ScheduledTransactionCreate(ScheduledTransactionBase):
 class ScheduledTransactionRead(ScheduledTransactionBase):
     id: int
 
-    class Config:
-        orm_mode = True

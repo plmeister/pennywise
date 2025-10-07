@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -61,8 +61,7 @@ class TransactionResponse(BaseModel):
     date: datetime
     currency_id: int
     
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TransactionCreate(BaseModel):
     source_account_id: int
@@ -73,8 +72,8 @@ class TransactionCreate(BaseModel):
 
 class Transaction(TransactionBase):
     id: int
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class ExternalTransactionCreate(BaseModel):
     internal_account_id: int

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from datetime import date
 from modules.transactions.service import TransactionService
 
+DECIMAL_ZERO = Decimal("0.00")
 
 class AccountService(BaseService[Account]):
     transaction_service: TransactionService
@@ -19,28 +20,25 @@ class AccountService(BaseService[Account]):
         name: str,
         account_type: str = "current",
         currency_id: int = 1,  # Default to first currency (usually GBP)
-        initial_balance: Decimal = Decimal("0.00")
+        interest_rate: Decimal = DECIMAL_ZERO,
     ) -> Account:
         # Create the account with zero balance
         account = Account(
             name=name,
             type=AccountType(account_type),
             currency_id=currency_id,
-            balance=Decimal("0.00")
+            balance=DECIMAL_ZERO,
+            interest_rate=interest_rate,
+            interest_compounding="",
+            minimum_payment=DECIMAL_ZERO,
+            overdraft_limit=DECIMAL_ZERO,
+            overdraft_interest_rate=DECIMAL_ZERO,
+            is_external=False,
         )
         
         self.db.add(account)
         self.db.commit()
         self.db.refresh(account)
-        
-        # If there's an initial balance, create a funding transaction
-        if initial_balance > 0:
-            self.transaction_service.create_multi_leg_transaction(
-                legs=[
-                    {'account_id': account.id, 'credit': initial_balance}
-                ],
-                description=f"Initial balance for {name}"
-            )
             
         return account
 
@@ -58,6 +56,10 @@ class AccountService(BaseService[Account]):
     def get_pot(self, pot_id: int) -> Pot | None:
         """Get a pot by its ID"""
         return self.db.query(Pot).get(pot_id)
+
+    def get_pots(self, account_id: int) -> list[Pot]:
+        """Get all pots for a given account"""
+        return self.db.query(Pot).filter(Pot.account_id == account_id).all()
 
     def transfer(
         self, from_id: int, to_id: int, amount: Decimal, description: str | None = None

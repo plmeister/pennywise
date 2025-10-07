@@ -12,6 +12,8 @@ from modules.accounts.service import AccountService
 from modules.transactions.service import TransactionService
 from modules.currencies.service import CurrencyService
 
+import traceback
+
 
 transactions_app = typer.Typer()
 
@@ -85,6 +87,7 @@ def transfer(
                    f"{to_account.currency.symbol}{to_amount:.{to_account.currency.decimals}f} "
                    f"in {to_account.name}")
     except Exception as e:
+        traceback.print_exc()
         rprint(f"[red]Transfer failed:[/red] {str(e)}")
 
 @transactions_app.command()
@@ -111,15 +114,28 @@ def list(
             context.console.print(
                 f"\n[bold]{tx.date.strftime('%Y-%m-%d')} - {tx.description or 'No description'}[/bold]"
             )
-            legs_table = Table("Account", "Debit", "Credit")
+            legs_table = Table("Date", "Description", "Account", "Debit", "Credit")
+            first_leg = True
             for leg in service.get_transaction_legs(tx.id):
                 account = account_service.get(leg.account_id)
                 if account:
-                    legs_table.add_row(
-                        account.name,
-                        f"{Decimal(str(leg.debit)):.2f}" if leg.debit else "",
-                        f"{Decimal(str(leg.credit)):.2f}" if leg.credit else "",
-                    )
+                    if first_leg:
+                        first_leg = False
+                        legs_table.add_row(
+                            tx.date.strftime("%Y-%m-%d"),
+                            tx.description or "",
+                            account.name,
+                            f"{Decimal(str(leg.debit)):.2f}" if leg.debit else "",
+                            f"{Decimal(str(leg.credit)):.2f}" if leg.credit else "",
+                        )
+                    else:
+                        legs_table.add_row(
+                            "",
+                            "",
+                            account.name,
+                            f"{Decimal(str(leg.debit)):.2f}" if leg.debit else "",
+                            f"{Decimal(str(leg.credit)):.2f}" if leg.credit else "",
+                        )
             context.console.print(legs_table)
     else:
         table = Table("Date", "Description", "Net Amount", "Accounts Involved")

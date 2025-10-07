@@ -4,7 +4,7 @@ from typing import Generic, TypeVar
 from database import Base
 
 
-ModelType = TypeVar("ModelType")
+ModelType = TypeVar("ModelType", bound=Base)
 
 class BaseService(Generic[ModelType]):
     model: type[ModelType]
@@ -15,7 +15,7 @@ class BaseService(Generic[ModelType]):
         self.db = db
 
     def get(self, id: int) -> ModelType | None:
-        return self.db.query(self.model).filter(Base.id == id).first()
+        return self.db.query(self.model).filter(self.model.id == id).first()
 
     def get_all(self) -> list[ModelType]:
         return self.db.query(self.model).all()

@@ -12,7 +12,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from database import Base
 from decimal import Decimal
-
+from .import_formats import ImportFormat
 
 class AccountType(str, enum.Enum):
     current = "current"
@@ -107,6 +107,10 @@ class Account(Base):
     overdraft_interest_rate: Mapped[Decimal] = mapped_column(
         Numeric(5, 4)
     )  # e.g. 0.19 for 19% APR
+
+    # Optional link to import format
+    import_format_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("import_formats.id"), nullable=True)
+    import_format: Mapped["ImportFormat"] = relationship("ImportFormat", back_populates="accounts")
 
 
 class Pot(Base):
